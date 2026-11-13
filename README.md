@@ -62,15 +62,19 @@ tag-my-mail \
 
 Without `--sql`, `--sql-file`, or piped stdin, the tool runs a generic
 query over `v_messages` — the 1000 most recent messages with the fields
-Gist needs — and prints it on stderr:
+Gist needs, excluding what Gmail filed as `SPAM` — and prints it on
+stderr:
 
 ```sql
 SELECT id, subject, snippet, sent_at, from_email
-FROM v_messages ORDER BY sent_at DESC LIMIT 1000
+FROM v_messages
+WHERE NOT list_contains(labels::VARCHAR[], 'SPAM')
+ORDER BY sent_at DESC LIMIT 1000
 ```
 
 So `tag-my-mail --from 2026-11-01` tags everything since November 1st
-with no SQL at all. Raise or remove the cap by passing your own query.
+with no SQL at all. Raise or remove the cap, or drop the spam filter, by
+passing your own query.
 
 No time range needed? Drop `--from`/`--to` and the placeholders:
 

@@ -56,6 +56,7 @@ class ResolveSqlTests(unittest.TestCase):
             sql = resolve_sql(make_args([]), notice=notice)
         self.assertEqual(sql, DEFAULT_SQL)
         self.assertIn("v_messages", sql)
+        self.assertIn("SPAM", sql)
         self.assertIn("default query", notice.getvalue())
 
     def test_default_query_when_piped_stdin_is_empty(self):
