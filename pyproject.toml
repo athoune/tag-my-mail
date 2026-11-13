@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tag-my-mail"
+version = "0.1.0"
+description = "Tag msgvault emails with the Gist topic model (on-device, via the desertant CLI)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Marc Le Cam" }]
+# Standard library only: msgvault and desertant are external CLI tools.
+dependencies = []
+
+[project.scripts]
+tag-my-mail = "tag_my_mail.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tag_my_mail*"]

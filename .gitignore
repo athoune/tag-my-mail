@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.tag-my-mail.cache.json
+build/
+dist/
