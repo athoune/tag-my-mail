@@ -25,14 +25,17 @@ DEFAULT_TEXT_COLUMNS = "subject,snippet"
 DEFAULT_CACHE = ".tag-my-mail.cache.json"
 
 # Used when no --sql/--sql-file/stdin SQL is provided: recent messages with
-# the fields Gist needs, minus what Gmail filed as SPAM (the label exists in
-# the analytics views; both counts agree with total minus 967 spam rows).
-# The LIMIT keeps an accidental no-args run bounded; it is printed on stderr
-# so nothing is silently truncated.
+# the fields Gist needs. Excludes Gmail's SPAM label, the TRASH label, and
+# messages deleted at the source (msgvault keeps those locally; `search`
+# ignores them, the analytics views include them). The LIMIT keeps an
+# accidental no-args run bounded; it is printed on stderr so nothing is
+# silently truncated.
 DEFAULT_SQL = (
     "SELECT id, subject, snippet, sent_at, from_email "
     "FROM v_messages "
-    "WHERE NOT list_contains(labels::VARCHAR[], 'SPAM') "
+    "WHERE deleted_from_source_at IS NULL "
+    "AND NOT list_contains(labels::VARCHAR[], 'SPAM') "
+    "AND NOT list_contains(labels::VARCHAR[], 'TRASH') "
     "ORDER BY sent_at DESC LIMIT 1000"
 )
 

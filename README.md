@@ -62,18 +62,27 @@ tag-my-mail \
 
 Without `--sql`, `--sql-file`, or piped stdin, the tool runs a generic
 query over `v_messages` — the 1000 most recent messages with the fields
-Gist needs, excluding what Gmail filed as `SPAM` — and prints it on
-stderr:
+Gist needs — and prints it on stderr:
 
 ```sql
 SELECT id, subject, snippet, sent_at, from_email
 FROM v_messages
-WHERE NOT list_contains(labels::VARCHAR[], 'SPAM')
+WHERE deleted_from_source_at IS NULL
+AND NOT list_contains(labels::VARCHAR[], 'SPAM')
+AND NOT list_contains(labels::VARCHAR[], 'TRASH')
 ORDER BY sent_at DESC LIMIT 1000
 ```
 
+What it keeps out, and why:
+
+- **`SPAM` and `TRASH` labels** — mail you filed away or binned.
+- **`deleted_from_source_at IS NULL`** — messages deleted at the source
+  (e.g. purged from Gmail). msgvault keeps them locally and the analytics
+  views include them, but `msgvault search` ignores them; without this
+  clause a wide date range would tag ~266k dead messages.
+
 So `tag-my-mail --from 2026-11-01` tags everything since November 1st
-with no SQL at all. Raise or remove the cap, or drop the spam filter, by
+with no SQL at all. Raise or remove the cap, or change the filters, by
 passing your own query.
 
 No time range needed? Drop `--from`/`--to` and the placeholders:
