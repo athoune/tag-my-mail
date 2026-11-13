@@ -7,6 +7,7 @@ import csv
 import json
 import sys
 import time
+from datetime import date
 from typing import Dict, List, Optional, TextIO
 
 from . import __version__
@@ -23,6 +24,14 @@ from .msgvault import MsgvaultError, run_query
 DEFAULT_TEXT_COLUMNS = "subject,snippet"
 DEFAULT_CACHE = ".tag-my-mail.cache.json"
 
+# Used when no --sql/--sql-file/stdin SQL is provided: recent messages with
+# the fields Gist needs. The LIMIT keeps an accidental no-args run bounded;
+# it is printed on stderr so nothing is silently truncated.
+DEFAULT_SQL = (
+    "SELECT id, subject, snippet, sent_at, from_email "
+    "FROM v_messages ORDER BY sent_at DESC LIMIT 1000"
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -35,7 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Time range: pass --from/--to and use {from}/{to} placeholders in the SQL "
             "(push-down into DuckDB). When the query selects a sent_at column "
-            "(--time-column), rows are also filtered client-side as a safety net."
+            "(--time-column), rows are also filtered client-side as a safety net. "
+            "--from without --to ends the range at today. "
+            "Without any SQL, a default query over v_messages is used (shown on stderr)."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -50,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     time_group = parser.add_argument_group("time range")
     time_group.add_argument("--from", dest="time_from", metavar="DATE", help="Lower bound, e.g. 2024-01-31 or '2024-01-31 18:00'")
-    time_group.add_argument("--to", dest="time_to", metavar="DATE", help="Upper bound, inclusive; date-only means end of day")
+    time_group.add_argument("--to", dest="time_to", metavar="DATE", help="Upper bound, inclusive; date-only means end of day. Defaults to today when --from is given")
     time_group.add_argument("--time-column", default="sent_at", help="Column used for client-side range filtering")
 
     tag_group = parser.add_argument_group("tagging")
@@ -79,32 +90,58 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_sql(args: argparse.Namespace) -> str:
+def resolve_sql(args: argparse.Namespace, notice: Optional[TextIO] = None) -> str:
+    notice = sys.stderr if notice is None else notice
     if args.sql is not None and args.sql_file:
         raise SystemExit("error: use either --sql or --sql-file, not both")
+
     if args.sql_file:
         try:
             with open(args.sql_file, "r", encoding="utf-8") as fh:
                 sql = fh.read()
         except OSError as exc:
             raise SystemExit(f"error: cannot read SQL file: {exc}") from None
-    elif args.sql == "-":
-        sql = sys.stdin.read()
-    elif args.sql is not None:
-        sql = args.sql
-    elif not sys.stdin.isatty():
-        sql = sys.stdin.read()
-    else:
-        raise SystemExit("error: provide SQL with --sql, --sql-file, or on stdin")
-    sql = sql.strip()
-    if not sql:
-        raise SystemExit("error: empty SQL")
-    return sql
+        sql = sql.strip()
+        if not sql:
+            raise SystemExit(f"error: empty SQL file: {args.sql_file}")
+        return sql
+
+    if args.sql == "-":
+        sql = sys.stdin.read().strip()
+        if not sql:
+            raise SystemExit("error: empty SQL on stdin")
+        return sql
+
+    if args.sql is not None:
+        sql = args.sql.strip()
+        if not sql:
+            raise SystemExit("error: empty SQL")
+        return sql
+
+    # No SQL given: piped stdin still counts as SQL, otherwise fall back to
+    # the default query over v_messages.
+    if not sys.stdin.isatty():
+        piped = sys.stdin.read().strip()
+        if piped:
+            return piped
+
+    print(
+        "[tag-my-mail] no --sql given; using the default query:\n"
+        f"  {DEFAULT_SQL}",
+        file=notice,
+    )
+    return DEFAULT_SQL
 
 
 def parse_bounds(args: argparse.Namespace):
     from_dt = parse_time_bound(args.time_from) if args.time_from else None
-    to_dt = parse_time_bound(args.time_to, end_of_day=True) if args.time_to else None
+    if args.time_to:
+        to_dt = parse_time_bound(args.time_to, end_of_day=True)
+    elif from_dt:
+        # --from alone means "up to now": bound the range by today, inclusive.
+        to_dt = parse_time_bound(date.today().isoformat(), end_of_day=True)
+    else:
+        to_dt = None
     if from_dt and to_dt and from_dt > to_dt:
         raise ValueError("--from is after --to")
     return from_dt, to_dt
@@ -131,6 +168,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if from_dt is not None and not args.time_to:
+        print(
+            f"[tag-my-mail] no --to given; range ends today ({to_dt.date()}, inclusive)",
+            file=sys.stderr,
+        )
 
     sql = resolve_sql(args)
     # Check the original SQL for placeholders before substituting them away.

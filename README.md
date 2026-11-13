@@ -51,10 +51,26 @@ tag-my-mail \
 - `{from}` / `{to}` in the SQL are replaced by the `--from` / `--to` bounds
   (push-down into DuckDB — this is the scalable path on a large archive).
   The quotes are optional: `{from}` and `'{from}'` both work.
+- `--from` without `--to` ends the range at **today** (inclusive), so
+  "since this date" needs no extra flag.
 - If the query selects a `sent_at` column (see `--time-column`), rows are
   also filtered client-side, so a forgotten placeholder cannot widen the
   range. If neither is possible, a warning says the range was not applied.
 - `--to` is inclusive; a date-only value means the end of that day.
+
+### No SQL? A default query
+
+Without `--sql`, `--sql-file`, or piped stdin, the tool runs a generic
+query over `v_messages` — the 1000 most recent messages with the fields
+Gist needs — and prints it on stderr:
+
+```sql
+SELECT id, subject, snippet, sent_at, from_email
+FROM v_messages ORDER BY sent_at DESC LIMIT 1000
+```
+
+So `tag-my-mail --from 2026-11-01` tags everything since November 1st
+with no SQL at all. Raise or remove the cap by passing your own query.
 
 No time range needed? Drop `--from`/`--to` and the placeholders:
 
@@ -79,6 +95,9 @@ The SQL can also come from a file (`--sql-file query.sql`) or stdin
 | `--cache PATH` / `--no-cache` | Tag cache (default `.tag-my-mail.cache.json`) |
 | `--fresh` | Ask msgvault to wait for analytics to include recent writes |
 | `-q` / `-v` | Less / more stderr detail |
+
+Defaults worth remembering: `--to` becomes today when only `--from` is
+given, and the SQL falls back to the `v_messages` query above.
 
 ### Output
 
@@ -109,7 +128,7 @@ filtering (`{from}`/`{to}` + `LIMIT`) rather than fetching the whole table.
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests   # 24 tests, stdlib only
+python3 -m unittest discover -s tests   # 35 tests, stdlib only
 ```
 
 Layout: `core.py` (pure helpers: time bounds, placeholders, text assembly),
